@@ -12,10 +12,10 @@ def set_sMMO_activation(sMMO_foldactivation, hours, *test_model):
         print "Test model loaded."
     else:
         model = '''
-            J1: CH4 -> CH3OH; pMMO*v_pMMO + sMMO*v_sMMO
-            J2: CH4 -> ; CH4*0.5/u
-            J3: CH3OH -> ; CH3OH*0.5/u
-            J4: VC -> bioremediation; n * (pMMO*v_pMMO_biorem + sMMO*v_sMMO_biorem)
+            J1: CH4 -> CH3OH; v_pMMO + delta_sMMO * v_sMMO
+            J2: CH4 -> ; CH4*0.5/t_div
+            J3: CH3OH -> ; CH3OH*0.5/t_div
+            J4: VC -> bioremediation; n * (pMMO*v_pMMO_biorem + delta_sMMO * v_sMMO_biorem)
             J5: n -> 2n; u # number of cells, need to implement stationary phase
         
             v_pMMO = Vmax_pMMO*CH4/(Km_pMMO + VC*Km_pMMO/Ki_pMMO + CH4)
@@ -24,13 +24,14 @@ def set_sMMO_activation(sMMO_foldactivation, hours, *test_model):
             v_pMMO_biorem = Vmax_pMMO_VC*VC/(Ki_pMMO + CH4*Ki_pMMO/Km_pMMO + VC)
             v_sMMO_biorem = Vmax_sMMO_VC*VC/(Ki_sMMO + CH4*Ki_sMMO/Km_sMMO + VC)
         
-            ###### Species init #######
+            # Species init
             $CH4 = 0.00097 # 58uM/min; this is the methane uptake of 5GB1 cells
             CH3OH = 0 # arbitrarily set to zero
+            $VC = 90
+            n = 1 # number of cells
+
         
-            ##### Param init ######
-        
-            # The following rates are for M. trichosporium  (Lee et al 2006)
+            # Rates and affinities (M. trichosporium Ob3)  (Lee et al 2006)
             Vmax_pMMO = 0.082/60
             Km_pMMO = 8.3
             Vmax_pMMO_VC = 0.042/60
@@ -41,31 +42,34 @@ def set_sMMO_activation(sMMO_foldactivation, hours, *test_model):
             Vmax_sMMO_VC = 2.1/60
             Ki_sMMO = 160
         
-            u = 6.5*3600 * k  # generation time * growth inhibition by compound
-        
+            # Growth kinetics
+            u = 0.122/3600 * k 
+            t_div = 0.69/u #ln2/u
+            k = 0.69  # inhibition of pMMO culture by 90 uM total of a mixture of HHC; assumes growth rate is only dependent on pMMO
+            
+            # Enzyme expression
             pMMO = 1
-            sMMO = 0.002 #500x repression in Cu medium with respect to no Cu medium
-            $VC = 100
-            k = pMMO * 0.69 + sMMO * 0.29
-            n = 1 '''
+            delta_sMMO = 0.002 * fold_sMMO # 0.002 corresponds to a 500x repression respect to no Cu medium, where it's fully repressed
+           
+           
+            '''
         print "Using default model."
 
     models = []
     
-    if test_model :     
-        for i in sMMO_foldactivation:
+    for i in sMMO_foldactivation:
+        if i == 1: # the pMMO condition rate already includes some sMMO expression        
             models.append(
-                te.loada(
-                    str.replace(test_model, "sMMO = 0.002", "sMMO = 0.002 * " + str(i))
-                        )
-                )
-    else:
-        for i in sMMO_foldactivation:
+                            te.loada(
+                                        str.replace(model, "delta_sMMO = 0.002 * fold_sMMO", "delta_sMMO = 0")
+                                       )
+            )
+        else: # increase the activity by the fold change
             models.append(
-                te.loada(
-                    str.replace(model, "sMMO = 0.002", "sMMO = 0.002 * " + str(i))
-                        )
-                )
+                            te.loada(
+                                        str.replace(model, "fold_sMMO", str(i))
+                                        )
+            )
         
     results = []
     for i in models:
@@ -75,7 +79,7 @@ def set_sMMO_activation(sMMO_foldactivation, hours, *test_model):
     for i in results[0][:, 0]:
         time.append(i/3600)
 
-    ylabels = ['CH3OH [uM]', 'Cumulative culture degradation [uM]','# cells']
+    ylabels = ['CH3OH [uM]', 'Collective culture degradation [uM]','# cells']
     linestyles = ['r--', 'b--', 'g--', 'c--', 'm--', 'y--', 'k--']
     for i in range(3): # number of species to plot, set labels accordingly above
         sim = 0
